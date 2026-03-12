@@ -7,4 +7,5 @@ data_len = 7
 crc_len = 4
 
 [Serial]
-port = "/dev/ttyUSB0"
+revice_port = "/dev/ttyUSB0"
+send_port = "/dev/tty.usbserial-212140"

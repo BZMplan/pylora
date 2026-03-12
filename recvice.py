@@ -1,7 +1,6 @@
-import os
 import binascii
-from dataclasses import dataclass
 import struct
+from dataclasses import dataclass
 from typing import Optional
 
 import serial
@@ -10,14 +9,15 @@ import toml
 
 config = toml.load("Config.toml")
 
-url = config["Server"]["url"]
-whole_len = config["Data"]["whole_len"]
-data_len = config["Data"]["data_len"]
-crc_len = config["Data"]["crc_len"]
-tty = config["Serial"]["port"]
+URL = config["Server"]["url"]
+WHOLE_LEN = config["Data"]["whole_len"]
+DATA_LEN = config["Data"]["data_len"]
+_CRC_LEN = config["Data"]["crc_len"]  # Kept for config compatibility.
+TTY = config["Serial"]["revice_port"]
+SCALE = 10
 
 
-ser = serial.Serial(tty, baudrate=9600, timeout=None)
+ser = serial.Serial(TTY, baudrate=9600, timeout=None)
 
 
 @dataclass
@@ -26,28 +26,27 @@ class Data:
     t: Optional[float] = None
     p: Optional[float] = None
     rh: Optional[float] = None
-    error: Optional[Exception] = None
+    error: Optional[object] = None
+
+    def _scaled_values(self) -> tuple[float, float, float]:
+        return self.t / SCALE, self.p / SCALE, self.rh / SCALE
 
     def print(self):
         station_id = self.station_id
-        t = self.t / 10
-        p = self.p / 10
-        rh = self.rh / 10
+        t, p, rh = self._scaled_values()
         print(f"{station_id=}\n{t=}\n{p=}\n{rh=}")
 
     def upload(self):
-        if (self.station_id == 1):
-            station_name = "AAU"
-        else:
-            station_name = "unknown"
+        station_name = "AAU" if self.station_id == 1 else "unknown"
+        t, p, rh = self._scaled_values()
         data = {
             "station_name": station_name,
-            "temperature": self.t / 10,
-            "pressure": self.p / 10,
-            "relative_humidity": self.rh / 10,
+            "temperature": t,
+            "pressure": p,
+            "relative_humidity": rh,
         }
         try:
-            response = requests.post(url, json=data)
+            response = requests.post(URL, json=data)
             print(response.status_code)
             print(response.json())
         except Exception:
@@ -55,29 +54,27 @@ class Data:
             print("等待服务器连接...")
 
 
-def decode(raw_data: bytes):
-    playload = raw_data[:data_len]
-    remote_crc = struct.unpack(">I", raw_data[data_len:])[0]
-    local_crc = binascii.crc32(playload)
+def decode(raw_data: bytes) -> Data:
+    payload = raw_data[:DATA_LEN]
+    remote_crc = struct.unpack(">I", raw_data[DATA_LEN:])[0]
+    local_crc = binascii.crc32(payload)
 
     if remote_crc == local_crc:
         try:
-            station_id, t, p, rh = struct.unpack(">Bhhh", playload)
+            station_id, t, p, rh = struct.unpack(">Bhhh", payload)
             return Data(station_id, t, p, rh)
         except Exception as error:
             return Data(error=error)
-    else:
-        return Data(error="CRC校验失败，接收到错误数据")
+    return Data(error="CRC校验失败，接收到错误数据")
 
 
 # 读取一行数据
 while True:
-    response = ser.read(whole_len)
+    response = ser.read(WHOLE_LEN)
     print(response)
-    if response.__len__() != whole_len:
+    if len(response) != WHOLE_LEN:
         continue
-    elif response.__len__() == whole_len:
-        data = decode(response)
+    data = decode(response)
 
     if not data.error:
         # print(f"# {i}: {response}")
@@ -87,4 +84,3 @@ while True:
     if data.error:
         # print(f"# {i}: {data.error}")
         ser.reset_input_buffer()
-        continue
