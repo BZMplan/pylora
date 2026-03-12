@@ -1,0 +1,10 @@
+[Server]
+url = "http://127.0.0.1:7763/v1/upload"
+
+[Data]
+whole_len = 11
+data_len = 7
+crc_len = 4
+
+[Serial]
+port = "/dev/ttyUSB0"
